@@ -1,0 +1,29 @@
+# Library of functions to manipulate ini files
+#Variables:
+Author='Jiri Kindl'
+Version='20220304'
+
+#Version history at the end of the file:
+
+#get list of IP from snmptrapd.log
+alias getTrapIPs="grep -o 'UDP: \[.*\]:162' | cut -d':' -f2 | grep -o -E '([0-9]+\.){3}[0-9]+' | sort |uniq"
+alias getTrapIPsWithCommunity="grep community snmptrapd.log | sed 's/.*UDP: \[\([^:]*\).*\]:162.*, community \([^$]*\)$/\1,\2/' | sort |uniq | sed 's/\]//g'"
+
+#convert snmptrapd.log records to snmptrap command, usefull when you wanna "replay" some trap
+alias log2trap="sed 's/[ \t]\+/ /g'| sed 's/ = Wrong Type (should be \([^)]*\)):/ = \1:/g' | sed 's/ = OCTET STRING:/ = STRING:/g' | sed 's/ = STRING:/ s/g' | sed 's/ = INTEGER: \([0-9]\+\) / i \1 /g' | sed 's/ = INTEGER: [a-z]\+(\([0-9]\+\)) / i \1 /g' | sed 's/ = INTEGER: [^0-9]\+ / i 0 /g' | sed 's/ = Timeticks:/ i/g' | sed 's/DISMAN-EVENT-MIB::sysUpTimeInstance i (\([^)]*\).*SNMPv2-MIB::snmpTrapOID.0 = OID: /snmptrap -v 2c -c public TrapRecieverIP \1 /g' | sed 's/\([^ ]*\) Enterprise Specific Trap (\([^)]*\)) /snmptrap -v 1 -c public TrapRecieverIP \1 localhost 6 \2 /'"
+#above alias explained
+#  sed 's/[ \t]\+/ /g' => replace tabs with spaces
+#  sed 's/ = Wrong Type (should be \([^)]*\)):/ = \1:/g'  => sometimes the vendor have type in MIB then sending in reality picking the typ it shall be accoring the MIB (otherwise not be able to send)
+#  sed 's/ = OCTET STRING:/ = STRING:/g' => doesn't matter is string or octet string will be send as just string 
+#  sed 's/ = STRING:/ s/g' => replace STRING with s (snmptrap parametr saying its string) 
+#  sed 's/ = INTEGER: \([0-9]\+\) / i \1 /g' replace INTEGER with i (snmptrap parametr saying its integer)
+#  sed 's/ = INTEGER: [a-z]\+(\([0-9]\+\)) / i \1 /g' replace INTEGER with i and number for "translated" number like "HP-NNMI-NBI-MIB::nnmiIncidentSeverity = INTEGER: major(4)" 
+#  sed 's/ = INTEGER: [^0-9]\+ / i 0 /g' => in some case (e.g. nnmi have "NULL" sa value but variable is number hence replacin anything which is not number with zero) 
+#  sed 's/ = Timeticks:/ i/g' => timeticks are also send as integer
+#  sed 's/DISMAN-EVENT-MIB::sysUpTimeInstance i (\([^)]*\).*SNMPv2-MIB::snmpTrapOID.0 = OID: /snmptrap -v 2c -c public TrapRecieverIP \1 /g' => extracting the trap name and adding snmptra command alogn with it for SMIv2
+#  sed 's/\([^ ]*\) Enterprise Specific Trap (\([^)]*\)) /snmptrap -v 1 -c public TrapRecieverIP \1 localhost 6 \2 /' => extracting the trap name and adding snmptra command alogn with it for SMIv1
+
+#VERSION HISTORY:
+#Version,Comment
+#20220304,CORRECTED:" i NULL " problem it's now replaces by " i 0 " it still might genrate some errors in case the integer for taht varaible have limited range not including 0
+#20220306,CORRECTED: log2trap wrong tab to space replacement 

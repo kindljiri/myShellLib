@@ -1,0 +1,291 @@
+#! /bin/sh
+
+# Library of functions to manipulate ini files
+#Variables:
+Author='Jiri Kindl'
+Version='20220216'
+
+#Version history at the end of the file:
+
+#LOAD LIBRARIES
+LIBPATH="$(readlink -f "$0" | rev | cut -d'/' -f3- | rev)/libs"
+if [ ! -e $LIBPATH/textEditAliases ]
+then
+  if [ -e ~/libs/textEditAliases ]    
+  then
+    . ~/libs/textEditAliases
+  else
+    . ../libs/textEditAliases
+  fi 
+else
+  . "$LIBPATH/textEditAliases"
+fi
+
+#Print out all sections (lines with text encolsed in square brackets)
+#Expect ARGS: FileName
+#Example: getAllSections myIniFile.ini
+getAllSections ()
+{
+  cat $1 |winEOL2linEOL|trimText | grep -E "^\[.*\]$"
+}
+
+#Check if section exist file
+#Expect ARGS: SectionName FileName
+#Exmple: existSection mySection myIniFile.ini
+existSection ()
+{
+  return $(cat $2 |winEOL2linEOL|grep -q -E "^\[$1\]$")
+}
+
+#Print out whole section from fiel
+#Expect ARGS: SectionName FileName
+#Example: getSectionAllKeys mySection myIniFile.ini
+getSectionAllKeys ()
+{
+  local section=$1
+  local filename=$2
+  local in_Section=1
+  local LINE
+  local tmpfile="/tmp/.tmp_iniedit_$(echo $filename|rev|cut -d'/' -f1|rev)_$(date +%s)"
+  
+  cat $filename|winEOL2linEOL | trimText | removeBlankLines | sed 's/\\/\\\\/g;'> $tmpfile
+  
+  #swtich off the special char expantion as for example * because those chars can be part of the file
+  set -o noglob
+  
+  if $(existSection $section $tmpfile)
+  then
+    while read LINE
+    do 
+      if [ $in_Section -eq 1 ]
+      then
+        if $(echo $LINE | grep -q -E "^\[$section\]$")
+        then
+          in_Section=0
+          echo $LINE 
+        fi
+      else
+        if $(echo $LINE | grep -q -E "^\[.*\]$")
+        then
+          in_Section=1
+          continue
+        fi
+        echo $LINE 
+      fi
+    done < $tmpfile
+  fi
+  
+  #swtich off the special char expantion 
+  set +o noglob
+
+  rm -f $tmpfile  
+}
+
+#Print out the key from given section in given file
+#Expect ARGS: SectionName Key FileName
+#Example: getSectionKeyValue mySection myKey myInifile.ini
+getSectionKeyValue ()
+{
+  local section=$1
+  local key=$2
+  local filename=$3
+  getSectionAllKeys $section $filename | grep -E "$key[ \t]*="
+}
+
+#Expect ARGS: SectionName Key FileName
+existSectionKey ()
+{
+  local section=$1
+  local key=$2
+  local filename=$3	
+  local retval=1
+  if [ $(getSectionKeyValue $section $key $filename |wc -l) -gt 0 ]
+  then
+    retval=0
+  fi
+  return $retval
+}
+
+#Print out whole file where it change or add specific key in specific section
+#Expect ARGS: SectionName Key Value FileName
+#Example: setSectionKeyValue mySection myKey myValue myInifile.ini
+setSectionKeyValue ()
+{
+  local section=$1
+  local key=$2
+  local value=$3
+  local filename=$4
+  local in_Section=1
+  local tmpfile="/tmp/.tmp_iniedit_$(echo $filename|rev|cut -d'/' -f1|rev)_$(date +%s)"
+  
+  cat $filename |winEOL2linEOL| trimText|sed 's/\\/\\\\/g;' > $tmpfile
+  
+  #swtich off the special char expantion as for example * because those chars can be part of the file
+  set -o noglob
+  
+  if $(existSection $section $tmpfile)
+  then
+    if $(existSectionKey $section $key $tmpfile)
+    then
+      while read LINE
+      do 
+        if [ $in_Section -eq 1 ]
+        then
+          if $(echo $LINE | grep -q -E "^\[$section\]$")
+          then
+            in_Section=0
+          fi
+          echo $LINE
+        else
+          if $(echo $LINE | grep -q -E "^\[.*\]$")
+          then
+            in_Section=1
+          fi
+          if $(echo $LINE| grep -q -E "$key[ \t]*=")
+          then
+            echo "$key = $value"
+          else
+            echo $LINE
+          fi
+        fi
+      done < $tmpfile
+      
+      #swtich off the special char expantion 
+      set +o noglob
+      
+      rm -f $tmpfile
+    
+    else
+      sed -e "/^\[$section\]$/ a $key = $value" $filename
+    fi
+  else
+    cat $filename
+    echo ""
+    echo "[$section]"
+    echo "$key = $value"
+  fi
+}
+
+#Print out whole file whitout specific section (and all key in under that section)
+#Expect ARGS: SectionName FileName
+#Example: removeSection mySection myInifile.ini
+removeSection ()
+{
+  local section=$1
+  local filename=$2
+  local in_Section=1
+  local LINE
+  local tmpfile="/tmp/.tmp_iniedit_$(echo $filename|rev|cut -d'/' -f1|rev)_$(date +%s)"
+  
+  cat $filename |winEOL2linEOL| trimText|sed 's/\\/\\\\/g;' > $tmpfile
+  
+  #swtich off the special char expantion as for example * because those chars can be part of the file
+  set -o noglob
+  
+  if $(existSection $section $tmpfile)
+  then
+    while read LINE
+    do 
+      if [ $in_Section -eq 1 ]
+      then
+        if $(echo $LINE | grep -q -E "^\[$section\]$")
+        then
+          in_Section=0
+        else
+          echo $LINE
+        fi
+      else
+        if $(echo $LINE | grep -q -E "^\[.*\]$")
+        then
+          in_Section=1
+          echo $LINE
+        fi
+      fi
+    done < $tmpfile
+  fi
+  
+  #swtich off the special char expantion 
+  set +o noglob
+  
+  rm -f $tmpfile
+}
+
+#Print out whole file whitout specific key under specific section 
+#Expect ARGS: SectionName Key FileName
+#Example: removeSection mySection myKey myInifile.ini
+removeSectionKey ()
+{
+  local section=$1
+  local key=$2
+  local filename=$3
+  local in_Section=1
+  local LINE
+  local tmpfile="/tmp/.tmp_iniedit_$(echo $filename|rev|cut -d'/' -f1|rev)_$(date +%s)"
+  
+  cat $filename|winEOL2linEOL | trimText|sed 's/\\/\\\\/g;' > $tmpfile
+  
+  #swtich off the special char expantion as for example * because those chars can be part of the file
+  set -o noglob
+  
+  if $(existSection $section $tmpfile)
+  then
+    while read LINE
+    do 
+      if [ $in_Section -eq 1 ]
+      then
+        if $(echo $LINE | grep -q -E "^\[$section\]$")
+        then
+          in_Section=0
+          echo $LINE
+        else
+          echo $LINE
+        fi
+      else
+        if $(echo $LINE | grep -q -E "^\[.*\]$")
+        then
+          in_Section=1
+        fi
+        if $(echo $LINE | grep -q -v -E "$key[ \t]*=")
+        then
+          echo $LINE
+        fi
+      fi
+    done < $tmpfile
+  fi
+  
+  #swtich off the special char expantion 
+  set +o noglob
+  
+  rm -f $tmpfile
+}
+
+#Expect ARGS: FileName [sort]
+nicerIni ()
+{
+  local counter=0
+  local section
+  local sections
+  declare -a sections
+  for section in $(getAllSections $1)
+  do
+    sections[$counter]=$section
+    counter=$(expr $counter + 1)
+  done
+  for section in ${sections[*]}
+  do
+    section=$(echo $section | sed 's/\[//g'|sed 's/\]//g')
+    echo "[$section]"
+    getSectionAllKeys $section $1 |removeBlankLines | grep -v -E "^\[.*\]$" | sed 's/[ \t]*=[ \t]*/ = /'
+    echo ""
+  done
+}
+
+#Version history at the end of the file:
+#VERSION HISTORY:
+#Version,Comment
+#20210913,ADDED: functions removeSectionKey, removeSection
+#20210915,ADDED: function nicerIni
+#20210920,ADDED: the $LIBPATH to make sure library will load, correct tmpfile
+#20220206,UPDATED: better the loading of dependencies (libs)
+#20220215,ADDED: conversion of windows end of the lines to linux end of the lines 
+#20220216,ADDED: correct \ handeling in all functions, in getSectionAllKeys added support for wildcards

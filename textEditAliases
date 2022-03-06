@@ -1,0 +1,23 @@
+# Library of functions to manipulate ini files
+#Variables:
+Author='Jiri Kindl'
+Version='20220304'
+
+#Version history at the end of the file:
+
+alias winEOL2linEOL="sed 's/\r//'"
+alias removeComments="sed '/^#/d'"
+alias removeRedundantSpaces="sed 's/[ \t]\+/ /g'"
+alias removeSpaces="sed 's/[ \t]*//g'"
+alias removeLeadingSpaces="sed 's/^[ \t]*//'"
+alias removeTrailingSpaces="sed 's/[ \t]*$//'"
+alias trimText="sed 's/^[ \t]*//' |sed 's/[ \t]*$//'"
+alias removeBlankLines="sed '/^$/d'"
+alias upperToLower="tr '[A-Z]' '[a-z]'"
+alias lowerToUpper="tr '[a-z]' '[A-Z]'"
+alias tabToSpaces="sed 's/\t/    /g'"
+#remove NonPrinatableASCIICharacters
+alias rmnpac="tr -cd '\040-\176,\012'"
+
+#VERSION HISTORY:
+#Version,Comment

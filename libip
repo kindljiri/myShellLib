@@ -1,0 +1,308 @@
+#! /bin/sh
+
+# Library of functions to manipulate and calculat IPs for IPv4
+#Variables:
+Author='Jiri Kindl'
+Version='20210909'
+#Version history at the end of the file:
+
+isValidIP ()
+{
+  local counter=0
+  local retval=0
+  local o
+  if $(echo "$1" | grep -q -E "^([0-9]+\.){3}[0-9]+$")
+  then
+  for o in $(echo $1 | sed 's/\./ /g')
+  do
+    if [ $o -gt -1 -a $o -lt 256 ]
+    then
+      counter=$(expr $counter + 1)
+    else
+      retval=1
+    fi
+  done
+  else
+    retval=1
+  fi
+  return $retval
+}
+
+isValidMask ()
+{
+  local retval=1
+  local binmask
+  local binmasklen
+  if $(isValidIP $1)
+  then
+    binmask=$(ip2bin $1)
+    if $(echo $binmask | grep -q -E "^1+0+$")
+    then
+      binmasklen=$( echo $binmask | wc -c )
+      #check 33 because wc -c count also new line added by echo
+      if [ $binmasklen -eq 33 ]
+      then
+        retval=0
+      fi
+    fi
+  fi
+  return $retval
+}
+
+isValidPrivateIP ()
+{
+  local retval=1
+  local o1
+  local o2
+  if $(isValidIP $1)
+  then
+    o1=$(echo $1|cut -d'.' -f1)
+    o2=$(echo $1|cut -d'.' -f2)
+    if [ $o1 -eq 10 ]
+    then
+      retval=0
+    fi
+    if [ $o1 -eq 192 -a $o2 -eq 168 ]
+    then
+      retval=0
+    fi
+    if [ $o1 -eq 172 ]
+    then
+      if [ $o1 -gt 15 -a $o2 -lt 32 ]
+      then
+        retval=0
+      fi
+    fi
+  fi
+  return $retval
+}
+
+isValidCIDR()
+{
+  local retval=1
+  local ip
+  local mask
+  if $(echo "$1" | grep -q -E "^([0-9]+\.){3}[0-9]+\/[0-9]+$")
+  then
+    ip=$(echo $1|cut -d'/' -f1)
+    if $(isValidIP $ip)
+    then
+      mask=$(echo $1 | cut -d'/' -f2 )
+      if [ $mask -gt 0 -a $mask -lt 33 ]
+      then
+        retval=0
+      fi
+    fi
+  fi
+  return $retval
+}
+
+dec2hex()
+{
+  echo "obase=16; $1" | bc
+}
+
+dec2bin()
+{
+  echo "obase=2; $1" | bc
+}
+
+bin2dec()
+{
+  echo "ibase=2; $1" | bc
+}
+
+ip2bin()
+{ 
+  local retval=0
+  local ipbin=''
+  local lz
+  local ib
+  if $(isValidIP "$1")
+  then
+    for o in $(echo $1 | sed 's/\./ /g');
+    do
+      ib=$(dec2bin $o)
+      if [ $(echo "$ib" | wc -c) -lt 9 ]
+      then
+        #use 9 instead of 8, because dec2bin returns also new line which si counted by wc -c
+        while [ $(echo $ib | wc -c) -lt 9 ]
+        do
+          ib="0$ib"
+        done
+      fi
+      ipbin=$(echo "$ipbin$ib")
+    done
+    echo $ipbin
+  else
+    retval=1
+  fi
+  return $retval
+}
+
+bin2ip ()
+{
+  local retval=0
+  local o1
+  local o2
+  local o3
+  local o4
+  if $(echo "$1" | grep -q -E "^[0,1]{32}$")
+  then
+    o1=$(echo $1 | cut -c1-8)
+    o2=$(echo $1 | cut -c9-16)
+    o3=$(echo $1 | cut -c17-24)
+    o4=$(echo $1 | cut -c25-32)
+    echo "$(bin2dec $o1).$(bin2dec $o2).$(bin2dec $o3).$(bin2dec $o4)"
+  else
+    retval=1
+  fi
+  return $retval
+}
+
+dec2ip ()
+{
+  local retval=0
+  local binip
+  binip=$(dec2bin $1)
+  while [ $(echo $binip | wc -c) -lt 33 ]
+  do
+    binip="0$binip"
+  done
+  bin2ip $binip
+  return $retval
+}
+
+mask2CIDR ()
+{
+  local retval=1
+  if $(isValidMask $1)
+  then
+    retval=0
+    ip2bin $1 | sed 's/0//g' | wc -c
+  fi
+  return $retval
+}
+
+#expects CIDR
+networkIP ()
+{
+  local retval=1
+  local ip
+  local cidrsubnet
+  local binip
+  local binnet
+  if $(isValidCIDR $1)
+  then
+    retval=0
+    ip=$(echo $1| cut -d'/' -f1)
+    cidrsubnet=$(echo $1| cut -d'/' -f2)
+    binip=$(ip2bin $ip)
+    binnet=$(echo $binip|cut -c1-$cidrsubnet | rev)
+    while [ $(echo $binnet|wc -c) -lt 33 ]
+    do
+      binnet="0$binnet"
+    done
+    bin2ip $(echo $binnet | rev)
+  fi
+  return $retval
+}
+
+#expects CIDR
+broadcastIP ()
+{
+  local retval=1
+  local broadcast
+  local binip
+  local ip
+  local cidrsubnet
+  if $(isValidCIDR $1)
+  then
+    retval=0
+    ip=$(echo $1| cut -d'/' -f1)
+    cidrsubnet=$(echo $1| cut -d'/' -f2)
+    binip=$(ip2bin $ip)
+    broadcast=$(echo $binip|cut -c1-$cidrsubnet | rev)
+    while [ $(echo $broadcast|wc -c) -lt 33 ]
+    do
+      broadcast="1$broadcast"
+    done
+    bin2ip $(echo $broadcast | rev) 
+  fi
+  return $retval
+}
+
+#expect CIDR
+firstHost ()
+{ 
+  local retval=1
+  local ip
+  local cidrsubnet
+  local firstip
+  if $(isValidCIDR $1)
+  then
+    retval=0
+    ip=$(echo $1| cut -d'/' -f1)
+    cidrsubnet=$(echo $1| cut -d'/' -f2)
+    binip=$(ip2bin $ip)
+    firstip=$(echo $binip|cut -c1-$cidrsubnet | rev)
+    while [ $(echo $firstip|wc -c) -lt 32 ]
+    do
+      firstip="0$firstip"
+    done
+    bin2ip $(echo "1$firstip" | rev)
+  fi
+  return $retval
+}
+
+#expect CIDR
+lastHost ()
+{
+  local retval=1
+  local ip
+  local cidrsubnet
+  local lastip
+  if $(isValidCIDR $1)
+  then
+    retval=0
+    ip=$(echo $1| cut -d'/' -f1)
+    cidrsubnet=$(echo $1| cut -d'/' -f2)
+    binip=$(ip2bin $ip)
+    lastip=$(echo $binip|cut -c1-$cidrsubnet | rev)
+    while [ $(echo $lastip|wc -c) -lt 32 ]
+    do
+      lastip="1$lastip"
+    done
+    bin2ip $(echo 0$lastip | rev)
+  fi
+  return $retval
+}
+
+#expect CIDR as input
+generateAllHosts ()
+{
+  local retval=1
+  local firstipdec
+  local lastipdec
+  local currentipdec
+  if $(isValidCIDR $1)
+  then
+    firstipdec=$(bin2dec $(ip2bin $(firstHost $1)))
+    lastipdec=$(bin2dec $(ip2bin $(lastHost $1)))
+    currentipdec=$firstipdec
+    while [ $currentipdec -lt $lastipdec ]
+    do
+      dec2ip $currentipdec
+      currentipdec=$(expr $currentipdec + 1)
+    done
+    dec2ip $currentipdec
+    retval=0
+  fi  
+  return $retval
+}
+
+
+#Version history at the end of the file:
+#VERSION HISTORY:
+#Version,Comment
+#20210909,make all variables in the functions local
